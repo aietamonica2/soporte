@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Estado de Soporte — Moovingtech</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.8.0/umd/Recharts.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700&family=DM+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #020c18; }
+    @keyframes shake {
+      0%,100%{transform:translateX(0)}
+      20%{transform:translateX(-8px)}
+      40%{transform:translateX(8px)}
+      60%{transform:translateX(-6px)}
+      80%{transform:translateX(6px)}
+    }
+    .shake { animation: shake 0.45s ease; }
+    @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+    .spin { display:inline-block; animation: spin 1.5s linear infinite; }
+    select { appearance: auto; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useCallback, useMemo, useEffect } = React;
+    const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid } = Recharts;
+
+    const PASSWORD = "mooving2025";
+    const CSV_URL = "https://raw.githubusercontent.com/aietamonica2/soporte/main/Tickets.csv";
+    const PROXY = "https://corsproxy.io/?";
+
+    const MONTHS_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+    const ACCENT = "#38bdf8", ACCENT2 = "#818cf8", GREEN = "#4ade80", ORANGE = "#fb923c";
+
+    function clean(val) {
+      if (!val || val.trim() === "'-" || val.trim() === "-" || val.trim() === "") return "";
+      return val.trim();
+    }
+    function parseNum(val) { const n = parseFloat(clean(val)); return isNaN(n) ? 0 : n; }
+    function getMonthKey(d) {
+      if (!d) return null;
+      const dt = new Date(d);
+      if (isNaN(dt)) return null;
+      return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`;
+    }
+    function monthLabel(key) {
+      if (!key) return "";
+      const [y,m] = key.split("-");
+      return `${MONTHS_ES[parseInt(m)-1]} ${y}`;
+    }
+    function agentName(email) {
+      if (!email) return "Sin asignar";
+      return email.split("@")[0].split(".").map(p=>p.charAt(0).toUpperCase()+p.slice(1)).join(" ");
+    }
+
+    function Delta({ curr, prev }) {
+      if (prev === undefined || prev === null) return null;
+      const d = curr - prev;
+      if (d === 0) return React.createElement("span", {style:{color:"#94a3b8",fontSize:13}}, "= igual");
+      return React.createElement("span", {style:{color:d>0?"#f87171":"#4ade80",fontSize:13,fontWeight:600}},
+        (d>0?"▲":"▼")+" "+Math.abs(d));
+    }
+
+    function KPICard({ label, value, prev, unit="", color=ACCENT }) {
+      return React.createElement("div", {style:{
+        background:"linear-gradient(135deg,#1e293b 0%,#162032 100%)",
+        border:`1px solid ${color}33`, borderRadius:16, padding:"22px 24px",
+        minWidth:160, flex:1, boxShadow:`0 0 24px ${color}18`
+      }},
+        React.createElement("div",{style:{color:"#94a3b8",fontSize:11,letterSpacing:2,textTransform:"uppercase",marginBottom:8}},label),
+        React.createElement("div",{style:{color,fontSize:38,fontFamily:"'DM Mono',monospace",fontWeight:700,lineHeight:1}},
+          value, React.createElement("span",{style:{fontSize:18,marginLeft:4,color:`${color}99`}},unit)),
+        prev!==undefined && React.createElement("div",{style:{marginTop:8,display:"flex",alignItems:"center",gap:8}},
+          React.createElement("span",{style:{color:"#475569",fontSize:12}},"vs anterior:"),
+          React.createElement(Delta,{curr,prev}))
+      );
+    }
+
+    function SectionTitle({ children }) {
+      return React.createElement("div",{style:{
+        fontSize:13,letterSpacing:3,textTransform:"uppercase",color:ACCENT,
+        borderLeft:`3px solid ${ACCENT}`,paddingLeft:12,marginBottom:16,marginTop:32,
+        fontFamily:"'DM Mono',monospace"
+      }},children);
+    }
+
+    function LoginScreen({ onSuccess }) {
+      const [input, setInput] = useState("");
+      const [error, setError] = useState(false);
+      const [shake, setShake] = useState(false);
+      const handleSubmit = () => {
+        if (input === PASSWORD) { onSuccess(); }
+        else {
+          setError(true); setShake(true);
+          setTimeout(()=>setShake(false),500);
+          setTimeout(()=>setError(false),2500);
+        }
+      };
+      return React.createElement("div",{style:{
+        minHeight:"100vh",background:"#020c18",display:"flex",flexDirection:"column",
+        alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',sans-serif",color:"#e2e8f0"
+      }},
+        React.createElement("div",{style:{
+          background:"linear-gradient(135deg,#0f172a 0%,#0d1a2a 100%)",
+          border:"1px solid #1e293b",borderRadius:24,padding:"48px 52px",
+          textAlign:"center",maxWidth:380,width:"90%",boxShadow:"0 0 60px #38bdf822"
+        }},
+          React.createElement("div",{style:{fontSize:42,marginBottom:12}},"🔒"),
+          React.createElement("div",{style:{
+            fontSize:24,fontWeight:700,letterSpacing:-0.5,
+            background:"linear-gradient(90deg,#38bdf8,#818cf8)",
+            WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:4
+          }},"Estado de Soporte"),
+          React.createElement("div",{style:{color:"#475569",fontSize:11,letterSpacing:3,textTransform:"uppercase",marginBottom:32}},
+            "Moovingtech — Acceso restringido"),
+          React.createElement("div",{className:shake?"shake":""},
+            React.createElement("input",{
+              type:"password",value:input,
+              onChange:e=>setInput(e.target.value),
+              onKeyDown:e=>e.key==="Enter"&&handleSubmit(),
+              placeholder:"Contraseña",autoFocus:true,
+              style:{
+                width:"100%",boxSizing:"border-box",background:"#0f172a",
+                border:`1px solid ${error?"#f87171":"#334155"}`,
+                borderRadius:10,padding:"12px 16px",color:"#e2e8f0",fontSize:15,
+                outline:"none",marginBottom:12,fontFamily:"'DM Mono',monospace",
+                letterSpacing:3,transition:"border-color .2s"
+              }
+            }),
+            error && React.createElement("div",{style:{color:"#f87171",fontSize:13,marginBottom:12}},
+              "Contraseña incorrecta. Intentá de nuevo."),
+            React.createElement("button",{
+              onClick:handleSubmit,
+              style:{
+                width:"100%",background:"linear-gradient(90deg,#38bdf8,#818cf8)",
+                color:"#020c18",border:"none",borderRadius:10,padding:"12px 0",
+                fontWeight:700,fontSize:15,cursor:"pointer",letterSpacing:0.5
+              }
+            },"Ingresar")
+          )
+        )
+      );
+    }
+
+    function Dashboard() {
+      const [tickets, setTickets] = useState([]);
+      const [months, setMonths] = useState([]);
+      const [selectedMonth, setSelectedMonth] = useState(null);
+      const [prevMonth, setPrevMonth] = useState(null);
+      const [activeTab, setActiveTab] = useState("resumen");
+      const [filterEstado, setFilterEstado] = useState("todos");
+      const [page, setPage] = useState(0);
+      const [loading, setLoading] = useState(true);
+      const [loadError, setLoadError] = useState(null);
+      const PAGE_SIZE = 15;
+
+      const processData = useCallback((data) => {
+        const cleaned = data.map(r => ({
+          id: clean(r["ID"]),
+          org: clean(r["Organización"]),
+          estado: clean(r["Estado del ticket"]),
+          asunto: clean(r["Asunto"]),
+          solicitante: clean(r["Solicitante"]),
+          solicitado: clean(r["Solicitado"]),
+          agente: clean(r["Agente asignado"]),
+          categoria: clean(r["Categoría"]) || "Sin categoría",
+          resuelto: clean(r["Resuelto"]),
+          noFacturable: clean(r[" NO Facturable"]) || clean(r["NO Facturable"]),
+          tiempo: parseNum(r["Tiempo"]),
+          mesEntrada: getMonthKey(clean(r["Solicitado"])),
+        }));
+        const monthSet = new Set();
+        cleaned.forEach(t => { if (t.mesEntrada) monthSet.add(t.mesEntrada); });
+        const sortedMonths = Array.from(monthSet).sort();
+        setMonths(sortedMonths);
+        setTickets(cleaned);
+        const last = sortedMonths[sortedMonths.length-1];
+        const prev = sortedMonths[sortedMonths.length-2] || null;
+        setSelectedMonth(last);
+        setPrevMonth(prev);
+        setPage(0);
+      }, []);
+
+      const fetchCSV = useCallback(() => {
+        setLoading(true); setLoadError(null);
+        fetch(PROXY + encodeURIComponent(CSV_URL))
+          .then(r => { if (!r.ok) throw new Error("Error HTTP " + r.status); return r.text(); })
+          .then(text => {
+            Papa.parse(text, {
+              header: true, skipEmptyLines: true,
+              complete: ({ data }) => { processData(data); setLoading(false); }
+            });
+          })
+          .catch(err => { setLoadError(err.message); setLoading(false); });
+      }, [processData]);
+
+      useEffect(() => { fetchCSV(); }, [fetchCSV]);
+
+      const handleFile = useCallback((e) => {
+        const file = e.dataTransfer?.files?.[0] || e.target?.files?.[0];
+        if (!file) return;
+        Papa.parse(file, {
+          header: true, skipEmptyLines: true,
+          complete: ({ data }) => { processData(data); setLoadError(null); }
+        });
+      }, [processData]);
+
+      const byMonth = useMemo(() => ({
+        curr: tickets.filter(t => t.mesEntrada === selectedMonth),
+        prev: prevMonth ? tickets.filter(t => t.mesEntrada === prevMonth) : []
+      }), [tickets, selectedMonth, prevMonth]);
+
+      const kpis = useMemo(() => {
+        const {curr, prev} = byMonth;
+        return {
+          entrantes: curr.length,
+          resueltos: curr.filter(t=>t.estado==="Resuelto").length,
+          sinAsignar: curr.filter(t=>!t.agente).length,
+          horas: parseFloat(curr.reduce((s,t)=>s+t.tiempo,0).toFixed(1)),
+          pEntrantes: prev.length,
+          pResueltos: prev.filter(t=>t.estado==="Resuelto").length,
+          pSinAsignar: prev.filter(t=>!t.agente).length,
+          pHoras: parseFloat(prev.reduce((s,t)=>s+t.tiempo,0).toFixed(1)),
+        };
+      }, [byMonth]);
+
+      const agentData = useMemo(() => {
+        const map = {};
+        byMonth.curr.filter(t=>t.estado==="Resuelto"&&t.agente).forEach(t => {
+          if (!map[t.agente]) map[t.agente] = {agente:agentName(t.agente),tickets:0,horas:0};
+          map[t.agente].tickets++; map[t.agente].horas+=t.tiempo;
+        });
+        return Object.values(map).sort((a,b)=>b.tickets-a.tickets);
+      }, [byMonth]);
+
+      const clientData = useMemo(() => {
+        const mk = arr => { const m={}; arr.forEach(t=>{ const k=t.org||"Sin org."; if(!m[k])m[k]={tickets:0,horas:0}; m[k].tickets++; m[k].horas+=t.tiempo; }); return m; };
+        const curr=mk(byMonth.curr), prev=mk(byMonth.prev);
+        return Array.from(new Set([...Object.keys(curr),...Object.keys(prev)])).map(k=>({
+          org:k, tickets:curr[k]?.tickets||0, horas:parseFloat((curr[k]?.horas||0).toFixed(1)),
+          prevTickets:prev[k]?.tickets||0, prevHoras:parseFloat((prev[k]?.horas||0).toFixed(1))
+        })).sort((a,b)=>b.tickets-a.tickets);
+      }, [byMonth]);
+
+      const catData = useMemo(() => {
+        const map={};
+        byMonth.curr.forEach(t=>{ if(!map[t.categoria])map[t.categoria]={cat:t.categoria,tickets:0,horas:0}; map[t.categoria].tickets++; map[t.categoria].horas+=t.tiempo; });
+        return Object.values(map).sort((a,b)=>b.tickets-a.tickets);
+      }, [byMonth]);
+
+      const sinAsignarList = useMemo(() =>
+        byMonth.curr.filter(t=>!t.agente).map(t=>({
+          ...t, days: t.solicitado ? Math.floor((Date.now()-new Date(t.solicitado))/86400000) : 0
+        })).sort((a,b)=>b.days-a.days), [byMonth]);
+
+      const filteredAll = useMemo(() => {
+        let list = byMonth.curr;
+        if (filterEstado !== "todos") list = list.filter(t=>t.estado===filterEstado);
+        return list;
+      }, [byMonth, filterEstado]);
+
+      const paginated = useMemo(() => filteredAll.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE), [filteredAll,page]);
+      const totalPages = Math.ceil(filteredAll.length/PAGE_SIZE);
+
+      if (loading) return React.createElement("div",{style:{
+        minHeight:"100vh",background:"#020c18",display:"flex",alignItems:"center",
+        justifyContent:"center",fontFamily:"'DM Sans',sans-serif",color:"#e2e8f0",flexDirection:"column",gap:16
+      }},
+        React.createElement("div",{className:"spin",style:{fontSize:48}},"⟳"),
+        React.createElement("div",{style:{fontSize:18,fontWeight:600,background:"linear-gradient(90deg,#38bdf8,#818cf8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}},"Cargando datos..."),
+        React.createElement("div",{style:{color:"#475569",fontSize:13}},"Descargando tickets desde GitHub")
+      );
+
+      if (loadError) return React.createElement("div",{style:{
+        minHeight:"100vh",background:"#020c18",display:"flex",alignItems:"center",
+        justifyContent:"center",fontFamily:"'DM Sans',sans-serif",color:"#e2e8f0",flexDirection:"column",gap:12,padding:32
+      }},
+        React.createElement("div",{style:{fontSize:48}},"⚠️"),
+        React.createElement("div",{style:{fontSize:18,fontWeight:700,color:"#f87171"}},"Error al cargar el archivo"),
+        React.createElement("div",{style:{color:"#64748b",fontSize:13,maxWidth:400,textAlign:"center"}},loadError),
+        React.createElement("button",{
+          onClick:fetchCSV,
+          style:{marginTop:8,background:ACCENT,color:"#020c18",border:"none",borderRadius:10,padding:"10px 24px",fontWeight:700,cursor:"pointer"}
+        },"🔄 Reintentar"),
+        React.createElement("div",{style:{borderTop:"1px solid #1e293b",paddingTop:16,textAlign:"center"}},
+          React.createElement("div",{style:{color:"#64748b",fontSize:12,marginBottom:8}},"O cargá el archivo manualmente:"),
+          React.createElement("label",{style:{
+            display:"inline-flex",alignItems:"center",gap:8,background:"#1e293b",
+            border:"1px solid #334155",borderRadius:10,padding:"10px 20px",cursor:"pointer",fontSize:13
+          }},
+            "📂 Seleccionar CSV",
+            React.createElement("input",{type:"file",accept:".csv",style:{display:"none"},onChange:handleFile})
+          )
+        )
+      );
+
+      const tabs = [
+        {id:"resumen",label:"Resumen"},
+        {id:"agentes",label:"Por Agente"},
+        {id:"clientes",label:"Por Cliente"},
+        {id:"categorias",label:"Categorías"},
+        {id:"sinasignar",label:`Sin Asignar (${sinAsignarList.length})`},
+        {id:"listado",label:"Listado"},
+      ];
+
+      return React.createElement("div",{style:{minHeight:"100vh",background:"#020c18",fontFamily:"'DM Sans',sans-serif",color:"#e2e8f0",paddingBottom:60}},
+        // HEADER
+        React.createElement("div",{style:{
+          background:"linear-gradient(180deg,#0f172a 0%,#020c18 100%)",
+          borderBottom:"1px solid #1e293b",padding:"20px 32px",
+          display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:16
+        }},
+          React.createElement("div",null,
+            React.createElement("div",{style:{fontSize:22,fontWeight:700,letterSpacing:-0.5,background:"linear-gradient(90deg,#38bdf8,#818cf8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}},"Estado de Soporte"),
+            React.createElement("div",{style:{color:"#475569",fontSize:11,letterSpacing:3,textTransform:"uppercase"}},"Moovingtech")
+          ),
+          React.createElement("div",{style:{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}},
+            React.createElement("div",null,
+              React.createElement("label",{style:{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:4}},"MES ANÁLISIS"),
+              React.createElement("select",{value:selectedMonth||"",onChange:e=>{setSelectedMonth(e.target.value);setPage(0);},
+                style:{background:"#1e293b",color:"#e2e8f0",border:"1px solid #334155",borderRadius:8,padding:"6px 12px",fontSize:13}},
+                months.map(m=>React.createElement("option",{key:m,value:m},monthLabel(m)))
+              )
+            ),
+            React.createElement("div",null,
+              React.createElement("label",{style:{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:4}},"MES COMPARACIÓN"),
+              React.createElement("select",{value:prevMonth||"",onChange:e=>setPrevMonth(e.target.value||null),
+                style:{background:"#1e293b",color:"#e2e8f0",border:"1px solid #334155",borderRadius:8,padding:"6px 12px",fontSize:13}},
+                React.createElement("option",{value:""},"— ninguno —"),
+                months.filter(m=>m!==selectedMonth).map(m=>React.createElement("option",{key:m,value:m},monthLabel(m)))
+              )
+            ),
+            React.createElement("button",{
+              onClick:fetchCSV,
+              style:{background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12,color:"#94a3b8",display:"flex",alignItems:"center",gap:6,marginTop:16}
+            },"🔄 Actualizar datos")
+          )
+        ),
+        // TABS
+        React.createElement("div",{style:{display:"flex",gap:2,padding:"0 32px",borderBottom:"1px solid #1e293b",background:"#020c18",overflowX:"auto"}},
+          tabs.map(t=>React.createElement("button",{
+            key:t.id,onClick:()=>setActiveTab(t.id),
+            style:{background:"none",border:"none",cursor:"pointer",padding:"14px 20px",fontSize:13,fontWeight:500,
+              color:activeTab===t.id?ACCENT:"#64748b",
+              borderBottom:activeTab===t.id?`2px solid ${ACCENT}`:"2px solid transparent",
+              transition:"color .15s",whiteSpace:"nowrap"}
+          },t.label))
+        ),
+        // CONTENT
+        React.createElement("div",{style:{padding:"28px 32px",maxWidth:1200,margin:"0 auto"}},
+          // RESUMEN
+          activeTab==="resumen" && React.createElement(React.Fragment,null,
+            React.createElement("div",{style:{color:"#64748b",fontSize:13,marginBottom:20}},
+              "Mostrando ",React.createElement("span",{style:{color:"#e2e8f0",fontWeight:600}},monthLabel(selectedMonth)),
+              prevMonth&&React.createElement(React.Fragment,null," vs ",React.createElement("span",{style:{color:"#94a3b8"}},monthLabel(prevMonth)))
+            ),
+            React.createElement("div",{style:{display:"flex",gap:16,flexWrap:"wrap"}},
+              React.createElement(KPICard,{label:"Tickets entrantes",value:kpis.entrantes,prev:prevMonth?kpis.pEntrantes:undefined,color:ACCENT}),
+              React.createElement(KPICard,{label:"Tickets resueltos",value:kpis.resueltos,prev:prevMonth?kpis.pResueltos:undefined,color:GREEN}),
+              React.createElement(KPICard,{label:"Sin asignar",value:kpis.sinAsignar,prev:prevMonth?kpis.pSinAsignar:undefined,color:ORANGE}),
+              React.createElement(KPICard,{label:"Horas de soporte",value:kpis.horas,prev:prevMonth?kpis.pHoras:undefined,unit:"h",color:ACCENT2})
+            ),
+            React.createElement(SectionTitle,null,"Evolución mensual — tickets entrantes"),
+            React.createElement("div",{style:{background:"#0f172a",borderRadius:16,padding:24,border:"1px solid #1e293b"}},
+              React.createElement(ResponsiveContainer,{width:"100%",height:200},
+                React.createElement(BarChart,{data:months.map(m=>({
+                  name:monthLabel(m).replace(" 20"," '"),
+                  tickets:tickets.filter(t=>t.mesEntrada===m).length,
+                  resueltos:tickets.filter(t=>t.mesEntrada===m&&t.estado==="Resuelto").length
+                }))},
+                  React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1e293b"}),
+                  React.createElement(XAxis,{dataKey:"name",tick:{fill:"#64748b",fontSize:11}}),
+                  React.createElement(YAxis,{tick:{fill:"#64748b",fontSize:11}}),
+                  React.createElement(Tooltip,{contentStyle:{background:"#1e293b",border:"none",borderRadius:8,color:"#e2e8f0"}}),
+                  React.createElement(Bar,{dataKey:"tickets",fill:ACCENT,radius:[4,4,0,0],name:"Entrantes"}),
+                  React.createElement(Bar,{dataKey:"resueltos",fill:GREEN,radius:[4,4,0,0],name:"Resueltos"})
+                )
+              )
+            )
+          ),
+          // AGENTES
+          activeTab==="agentes" && React.createElement(React.Fragment,null,
+            React.createElement(SectionTitle,null,`Tickets resueltos por agente — ${monthLabel(selectedMonth)}`),
+            React.createElement("div",{style:{background:"#0f172a",borderRadius:16,padding:24,border:"1px solid #1e293b",marginBottom:24}},
+              React.createElement(ResponsiveContainer,{width:"100%",height:Math.max(160,agentData.length*44)},
+                React.createElement(BarChart,{data:agentData,layout:"vertical"},
+                  React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1e293b"}),
+                  React.createElement(XAxis,{type:"number",tick:{fill:"#64748b",fontSize:11}}),
+                  React.createElement(YAxis,{dataKey:"agente",type:"category",tick:{fill:"#e2e8f0",fontSize:12},width:120}),
+                  React.createElement(Tooltip,{contentStyle:{background:"#1e293b",border:"none",borderRadius:8,color:"#e2e8f0"}}),
+                  React.createElement(Bar,{dataKey:"tickets",name:"Tickets",radius:[0,4,4,0]},
+                    agentData.map((_,i)=>React.createElement(Cell,{key:i,fill:[ACCENT,ACCENT2,GREEN,ORANGE][i%4]}))
+                  )
+                )
+              )
+            ),
+            React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:14}},
+              React.createElement("thead",null,React.createElement("tr",{style:{borderBottom:"2px solid #1e293b"}},
+                ["Agente","Tickets resueltos","Horas totales","Hs promedio/ticket"].map(h=>
+                  React.createElement("th",{key:h,style:{textAlign:"left",padding:"10px 16px",color:"#64748b",fontSize:11,letterSpacing:1,textTransform:"uppercase"}},h))
+              )),
+              React.createElement("tbody",null,agentData.map((a,i)=>
+                React.createElement("tr",{key:i,style:{borderBottom:"1px solid #0f172a",background:i%2===0?"#0d1a2a":"transparent"}},
+                  React.createElement("td",{style:{padding:"12px 16px",fontWeight:600}},a.agente),
+                  React.createElement("td",{style:{padding:"12px 16px",color:ACCENT,fontFamily:"'DM Mono',monospace"}},a.tickets),
+                  React.createElement("td",{style:{padding:"12px 16px",color:ACCENT2,fontFamily:"'DM Mono',monospace"}},a.horas.toFixed(1)+"h"),
+                  React.createElement("td",{style:{padding:"12px 16px",color:"#94a3b8",fontFamily:"'DM Mono',monospace"}},a.tickets?(a.horas/a.tickets).toFixed(1):0,"h")
+                )
+              ))
+            )
+          ),
+          // CLIENTES
+          activeTab==="clientes" && React.createElement(React.Fragment,null,
+            React.createElement(SectionTitle,null,`Tickets por cliente — ${monthLabel(selectedMonth)}${prevMonth?" vs "+monthLabel(prevMonth):""}`),
+            React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:14}},
+              React.createElement("thead",null,React.createElement("tr",{style:{borderBottom:"2px solid #1e293b"}},
+                ["Cliente","Tickets",prevMonth?"Mes anterior":null,prevMonth?"Δ Tickets":null,"Horas",prevMonth?"Δ Horas":null]
+                  .filter(Boolean).map(h=>React.createElement("th",{key:h,style:{textAlign:"left",padding:"10px 16px",color:"#64748b",fontSize:11,letterSpacing:1,textTransform:"uppercase"}},h))
+              )),
+              React.createElement("tbody",null,clientData.map((c,i)=>
+                React.createElement("tr",{key:i,style:{borderBottom:"1px solid #0f172a",background:i%2===0?"#0d1a2a":"transparent"}},
+                  React.createElement("td",{style:{padding:"12px 16px",fontWeight:600}},c.org),
+                  React.createElement("td",{style:{padding:"12px 16px",color:ACCENT,fontFamily:"'DM Mono',monospace"}},c.tickets),
+                  prevMonth&&React.createElement("td",{style:{padding:"12px 16px",color:"#64748b",fontFamily:"'DM Mono',monospace"}},c.prevTickets),
+                  prevMonth&&React.createElement("td",{style:{padding:"12px 16px"}},React.createElement(Delta,{curr:c.tickets,prev:c.prevTickets})),
+                  React.createElement("td",{style:{padding:"12px 16px",color:ACCENT2,fontFamily:"'DM Mono',monospace"}},c.horas+"h"),
+                  prevMonth&&React.createElement("td",{style:{padding:"12px 16px"}},React.createElement(Delta,{curr:c.horas,prev:c.prevHoras}))
+                )
+              ))
+            )
+          ),
+          // CATEGORIAS
+          activeTab==="categorias" && React.createElement(React.Fragment,null,
+            React.createElement(SectionTitle,null,`Tickets por categoría — ${monthLabel(selectedMonth)}`),
+            React.createElement("div",{style:{background:"#0f172a",borderRadius:16,padding:24,border:"1px solid #1e293b",marginBottom:24}},
+              React.createElement(ResponsiveContainer,{width:"100%",height:Math.max(160,catData.length*44)},
+                React.createElement(BarChart,{data:catData,layout:"vertical"},
+                  React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:"#1e293b"}),
+                  React.createElement(XAxis,{type:"number",tick:{fill:"#64748b",fontSize:11}}),
+                  React.createElement(YAxis,{dataKey:"cat",type:"category",tick:{fill:"#e2e8f0",fontSize:12},width:140}),
+                  React.createElement(Tooltip,{contentStyle:{background:"#1e293b",border:"none",borderRadius:8,color:"#e2e8f0"}}),
+                  React.createElement(Bar,{dataKey:"tickets",name:"Tickets",radius:[0,4,4,0]},
+                    catData.map((_,i)=>React.createElement(Cell,{key:i,fill:[ACCENT,ACCENT2,GREEN,ORANGE,"#e879f9"][i%5]}))
+                  )
+                )
+              )
+            ),
+            React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:14}},
+              React.createElement("thead",null,React.createElement("tr",{style:{borderBottom:"2px solid #1e293b"}},
+                ["Categoría","Tickets","Horas"].map(h=>React.createElement("th",{key:h,style:{textAlign:"left",padding:"10px 16px",color:"#64748b",fontSize:11,letterSpacing:1,textTransform:"uppercase"}},h))
+              )),
+              React.createElement("tbody",null,catData.map((c,i)=>
+                React.createElement("tr",{key:i,style:{borderBottom:"1px solid #0f172a",background:i%2===0?"#0d1a2a":"transparent"}},
+                  React.createElement("td",{style:{padding:"12px 16px",fontWeight:600}},c.cat),
+                  React.createElement("td",{style:{padding:"12px 16px",color:ACCENT,fontFamily:"'DM Mono',monospace"}},c.tickets),
+                  React.createElement("td",{style:{padding:"12px 16px",color:ACCENT2,fontFamily:"'DM Mono',monospace"}},c.horas.toFixed(1)+"h")
+                )
+              ))
+            )
+          ),
+          // SIN ASIGNAR
+          activeTab==="sinasignar" && React.createElement(React.Fragment,null,
+            React.createElement(SectionTitle,null,`Tickets sin asignar — ${monthLabel(selectedMonth)}`),
+            sinAsignarList.length===0
+              ? React.createElement("div",{style:{textAlign:"center",color:GREEN,padding:48,fontSize:16}},"✅ Todos los tickets tienen agente asignado")
+              : React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},
+                  React.createElement("thead",null,React.createElement("tr",{style:{borderBottom:"2px solid #1e293b"}},
+                    ["ID","Cliente","Asunto","Estado","Solicitado","Días abierto"].map(h=>
+                      React.createElement("th",{key:h,style:{textAlign:"left",padding:"10px 14px",color:"#64748b",fontSize:11,letterSpacing:1,textTransform:"uppercase"}},h))
+                  )),
+                  React.createElement("tbody",null,sinAsignarList.map((t,i)=>
+                    React.createElement("tr",{key:i,style:{borderBottom:"1px solid #0f172a",background:t.days>7?"#1a0f00":i%2===0?"#0d1a2a":"transparent"}},
+                      React.createElement("td",{style:{padding:"10px 14px",color:"#64748b",fontFamily:"'DM Mono',monospace"}},"#"+t.id),
+                      React.createElement("td",{style:{padding:"10px 14px"}},t.org||"—"),
+                      React.createElement("td",{style:{padding:"10px 14px",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},t.asunto),
+                      React.createElement("td",{style:{padding:"10px 14px"}},
+                        React.createElement("span",{style:{background:t.estado==="Nuevo"?"#1e293b":"#1a1a2e",color:t.estado==="Nuevo"?ACCENT:ACCENT2,borderRadius:6,padding:"2px 10px",fontSize:11,fontWeight:600}},t.estado)
+                      ),
+                      React.createElement("td",{style:{padding:"10px 14px",color:"#64748b",fontFamily:"'DM Mono',monospace",fontSize:12}},t.solicitado?t.solicitado.slice(0,10):"—"),
+                      React.createElement("td",{style:{padding:"10px 14px"}},
+                        React.createElement("span",{style:{color:t.days>7?ORANGE:"#94a3b8",fontFamily:"'DM Mono',monospace",fontWeight:t.days>7?700:400}},
+                          t.days>0?t.days+"d":"hoy",t.days>7?" ⚠️":"")
+                      )
+                    )
+                  ))
+                )
+          ),
+          // LISTADO
+          activeTab==="listado" && React.createElement(React.Fragment,null,
+            React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}},
+              React.createElement(SectionTitle,null,`Listado completo — ${monthLabel(selectedMonth)}`),
+              React.createElement("div",{style:{marginLeft:"auto",display:"flex",gap:8,flexWrap:"wrap"}},
+                ["todos","Resuelto","Pendiente","En curso","Nuevo"].map(e=>
+                  React.createElement("button",{key:e,onClick:()=>{setFilterEstado(e);setPage(0);},
+                    style:{background:filterEstado===e?ACCENT:"#1e293b",color:filterEstado===e?"#020c18":"#94a3b8",
+                      border:"none",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:600}
+                  },e==="todos"?"Todos":e)
+                )
+              )
+            ),
+            React.createElement("div",{style:{overflowX:"auto"}},
+              React.createElement("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:800}},
+                React.createElement("thead",null,React.createElement("tr",{style:{borderBottom:"2px solid #1e293b"}},
+                  ["ID","Cliente","Asunto","Estado","Agente","Categoría","Solicitado","Resuelto","Hs"].map(h=>
+                    React.createElement("th",{key:h,style:{textAlign:"left",padding:"10px 12px",color:"#64748b",fontSize:10,letterSpacing:1,textTransform:"uppercase"}},h))
+                )),
+                React.createElement("tbody",null,paginated.map((t,i)=>
+                  React.createElement("tr",{key:i,style:{borderBottom:"1px solid #0f172a",background:i%2===0?"#0d1a2a":"transparent"}},
+                    React.createElement("td",{style:{padding:"9px 12px",color:"#64748b",fontFamily:"'DM Mono',monospace"}},"#"+t.id),
+                    React.createElement("td",{style:{padding:"9px 12px",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},t.org||"—"),
+                    React.createElement("td",{style:{padding:"9px 12px",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},t.asunto),
+                    React.createElement("td",{style:{padding:"9px 12px"}},
+                      React.createElement("span",{style:{
+                        background:{Resuelto:"#052e16",Pendiente:"#1c1917","En curso":"#0c1445",Nuevo:"#1e293b"}[t.estado]||"#1e293b",
+                        color:{Resuelto:GREEN,Pendiente:ORANGE,"En curso":ACCENT2,Nuevo:ACCENT}[t.estado]||"#94a3b8",
+                        borderRadius:5,padding:"2px 8px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"
+                      }},t.estado)
+                    ),
+                    React.createElement("td",{style:{padding:"9px 12px",color:"#94a3b8",fontSize:11}},t.agente?agentName(t.agente):React.createElement("span",{style:{color:ORANGE}},"Sin asignar")),
+                    React.createElement("td",{style:{padding:"9px 12px",color:"#64748b",fontSize:11}},t.categoria),
+                    React.createElement("td",{style:{padding:"9px 12px",color:"#64748b",fontFamily:"'DM Mono',monospace",fontSize:11}},t.solicitado?t.solicitado.slice(0,10):"—"),
+                    React.createElement("td",{style:{padding:"9px 12px",color:"#64748b",fontFamily:"'DM Mono',monospace",fontSize:11}},t.resuelto?t.resuelto.slice(0,10):"—"),
+                    React.createElement("td",{style:{padding:"9px 12px",color:ACCENT2,fontFamily:"'DM Mono',monospace"}},t.tiempo||"—")
+                  )
+                ))
+              )
+            ),
+            totalPages>1 && React.createElement("div",{style:{display:"flex",justifyContent:"center",gap:8,marginTop:20}},
+              React.createElement("button",{onClick:()=>setPage(p=>Math.max(0,p-1)),disabled:page===0,
+                style:{background:"#1e293b",border:"none",color:page===0?"#334155":"#e2e8f0",borderRadius:8,padding:"8px 16px",cursor:page===0?"default":"pointer"}},"←"),
+              React.createElement("span",{style:{color:"#64748b",padding:"8px 12px",fontSize:13}},`Pág ${page+1} / ${totalPages}`),
+              React.createElement("button",{onClick:()=>setPage(p=>Math.min(totalPages-1,p+1)),disabled:page===totalPages-1,
+                style:{background:"#1e293b",border:"none",color:page===totalPages-1?"#334155":"#e2e8f0",borderRadius:8,padding:"8px 16px",cursor:page===totalPages-1?"default":"pointer"}},"→")
+            )
+          )
+        )
+      );
+    }
+
+    function App() {
+      const [authed, setAuthed] = useState(false);
+      return authed ? React.createElement(Dashboard) : React.createElement(LoginScreen, {onSuccess:()=>setAuthed(true)});
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+  </script>
+</body>
+</html>
